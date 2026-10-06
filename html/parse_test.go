@@ -497,6 +497,49 @@ func TestSearchTagClosesP(t *testing.T) {
 	}
 }
 
+func TestParseDuplicateAttributes(t *testing.T) {
+	// Browsers keep only the first occurrence of a duplicated attribute name,
+	// so the parser must do the same. Otherwise a later duplicate can change
+	// how the tree is built (e.g. turning annotation-xml into an HTML
+	// integration point), and rendering the tree produces markup that a
+	// browser parses into a different, unsanitized tree.
+	for _, tc := range []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			"annotation-xml encoding",
+			`<math><annotation-xml encoding="x" encoding="text/html"><style><img src=x onerror=alert(1)></style></annotation-xml></math>`,
+			`<html><head></head><body><math><annotation-xml encoding="x"><style></style></annotation-xml></math><img src="x" onerror="alert(1)"/></body></html>`,
+		},
+		{
+			"annotation-xml encoding, different case",
+			`<math><annotation-xml encoding="x" ENCODING="text/html"><style><img src=x onerror=alert(1)></style></annotation-xml></math>`,
+			`<html><head></head><body><math><annotation-xml encoding="x"><style></style></annotation-xml></math><img src="x" onerror="alert(1)"/></body></html>`,
+		},
+		{
+			"hidden input in table",
+			`<table><input type="text" type="hidden"></table>`,
+			`<html><head></head><body><input type="text"/><table></table></body></html>`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := Parse(strings.NewReader(tc.src))
+			if err != nil {
+				t.Fatalf("Parse(%q): %v", tc.src, err)
+			}
+			var b strings.Builder
+			if err := Render(&b, doc); err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			if got := b.String(); got != tc.want {
+				t.Errorf("Parse(%q) rendered as\n%q\nwant\n%q", tc.src, got, tc.want)
+			}
+		})
+	}
+}
+
 func BenchmarkParser(b *testing.B) {
 	buf, err := os.ReadFile("testdata/go1.html")
 	if err != nil {
